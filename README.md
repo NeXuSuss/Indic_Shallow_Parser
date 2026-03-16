@@ -79,11 +79,21 @@ This downloads and places all required models in the correct directory structure
 
 ## Usage
 
-### API + ShalloParser (To run Clause boundary follow steps in cb_hindi_model/README.md)
+### API + ShallowParser with Clause Boundary (CB)
 
-```bash
-python3 run_shallow_parser_cb.py
-```
+To run the parser with detailed Clause Boundary annotations:
+
+1. **Install additional dependencies**:
+   ```bash
+   pip install torch transformers peft accelerate
+   ```
+2. **Set your Hugging Face token**:
+   Open `run_shallow_parser_cb.py` and replace `"YOUR TOKEN HERE"` with your actual Hugging Face token.
+3. **Run the processor**:
+   ```bash
+   python3 run_shallow_parser_cb.py
+   ```
+   *Note: On first run, the base model (Gemma-3-4b-it) will be downloaded (~7-8 GB).*
 
 ### Python API
 
