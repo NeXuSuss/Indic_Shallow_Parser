@@ -54,12 +54,11 @@ Output:"""
     prediction = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     return prediction.strip()
 
-def parse_cb_to_bio(cb_output, tokens):
-    """Convert bracket CB output to multiple BIO tag columns for nested clauses."""
-    bio_tags = [[] for _ in tokens]
+def parse_cb_to_boundaries(cb_output, tokens):
+    """Convert bracket CB output to Boundary tags ({TYPE}, {/TYPE})"""
+    boundary_tags = [[] for _ in tokens]
     
     pattern = r'(\w+)\[\s*([^\[\]]+)\s*\]\1'
-    
     temp_output = cb_output
     all_clauses = []
     
@@ -76,21 +75,25 @@ def parse_cb_to_bio(cb_output, tokens):
     all_clauses.reverse()
     
     for clause_type, clause_tokens in all_clauses:
-        first_in_clause = True
         ct_idx = 0
+        start_pos = -1
+        end_pos = -1
         
         for i, token in enumerate(tokens):
             if ct_idx < len(clause_tokens) and token == clause_tokens[ct_idx]:
-                if first_in_clause:
-                    bio_tags[i].append(f"B-{clause_type}")
-                    first_in_clause = False
-                else:
-                    bio_tags[i].append(f"I-{clause_type}")
+                if ct_idx == 0:
+                    start_pos = i
+                if ct_idx == len(clause_tokens) - 1:
+                    end_pos = i
+                    break 
                 ct_idx += 1
-            else:
-                bio_tags[i].append("O")
-    
-    return bio_tags
+        
+        if start_pos != -1:
+            boundary_tags[start_pos].append(f"{{{clause_type}}}")
+        if end_pos != -1:
+            boundary_tags[end_pos].append(f"{{/{clause_type}}}")
+            
+    return boundary_tags
 
 # === Config ===
 HF_TOKEN = "YOUR TOKEN HERE"
@@ -102,7 +105,7 @@ cb_model, cb_tokenizer = load_cb_model(CB_MODEL_PATH, HF_TOKEN)
 print("CB model loaded!")
 
 # === Main Processing ===
-text = "ट्रेन में होने वाले हर अपराध में इस गाँव का कोई न कोई शामिल मिल जाएगा ।"
+text = "उन्होंने कहा कि यदि आप अपनी पसंद के क्षेत्र में ईमानदारी और प्रभावी ढंग से अपने कर्तव्यों का पालन करते हैं , तो निश्चित रूप से देश बहुत तेजी से आगे बढ़ेगा ।"
 
 conll_output = shallow_parse(text, "hin", mode="conll")
 
@@ -120,7 +123,7 @@ for line in conll_output:
     if len(cols) >= 2:
         tokens.append(cols[1])
 
-cb_bio_tags = parse_cb_to_bio(cb_output, tokens)
+cb_boundary_tags = parse_cb_to_boundaries(cb_output, tokens)
 
 def parse_morph(morph_str):
     feats = {"Gender": "", "Number": "", "Person": "", "Case": "", "Vib": ""}
@@ -145,13 +148,13 @@ def ssf_string_to_fs_with_cb(ssf_text, cb_tags, fileno=1, sentno=1):
         feats = parse_morph(morph)
         fs = f"{lemma},{lcat},{feats['Gender']},{feats['Number']},{feats['Person']},{feats['Case']},{feats['Vib']},{feats['Vib']}"
         
-        cb_tag_str = "+".join([t for t in cb_tags[idx] if t != "O"]) if idx < len(cb_tags) and cb_tags[idx] else ""
+        cb_tag_str = "".join(cb_tags[idx]) if idx < len(cb_tags) and cb_tags[idx] else ""
         
         out_line = f"{fileno} {sentno} {tokenno} {token} {pos} {chunk} {fs} {cb_tag_str}"
         output_lines.append(out_line)
         idx += 1
     return "\n".join(output_lines)
 
-fs_text = ssf_string_to_fs_with_cb(conll_output, cb_bio_tags)
+fs_text = ssf_string_to_fs_with_cb(conll_output, cb_boundary_tags)
 print("OUTPUT WITH CLAUSE BOUNDARY:")
 print(fs_text)
