@@ -8,7 +8,6 @@ from shallow_parser import shallow_parse
 # === CB Model Functions ===
 def load_cb_model(model_path, hf_token):
     config = PeftConfig.from_pretrained(model_path)
-    # Using device_map="cuda" instead of "auto" to avoid the 'set' TypeError
     base_model = AutoModelForCausalLM.from_pretrained(
         config.base_model_name_or_path,
         device_map="cuda", 
@@ -57,7 +56,6 @@ Output:"""
     return prediction.strip()
 
 def parse_cb_to_boundaries(cb_output, tokens):
-    """Convert bracket CB output to Boundary tags ({TYPE}, {/TYPE})"""
     boundary_tags = [[] for _ in tokens]
     pattern = r'(\w+)\[\s*([^\[\]]+)\s*\]\1'
     temp_output = cb_output
@@ -98,7 +96,6 @@ def parse_morph(morph_str):
     return feats
 
 def ssf_string_to_fs_with_cb(ssf_text, cb_tags, fileno=1, starting_sentno=0):
-    """Converts CoNLL SSF output into a 9-column, tab-separated format."""
     output_lines = []
     idx = 0
     sentno = starting_sentno
@@ -119,7 +116,6 @@ def ssf_string_to_fs_with_cb(ssf_text, cb_tags, fileno=1, starting_sentno=0):
         feats = parse_morph(morph)
         fs = f"{lemma},{lcat},{feats['Gender']},{feats['Number']},{feats['Person']},{feats['Case']},{feats['Vib']}"
         
-        # Consistent Uppercase "O" for non-tagged fields
         ner_tag = "O" 
         cb_tag_str = "".join(cb_tags[idx]) if (idx < len(cb_tags) and cb_tags[idx]) else "O"
             
@@ -130,14 +126,20 @@ def ssf_string_to_fs_with_cb(ssf_text, cb_tags, fileno=1, starting_sentno=0):
         
     return "\n".join(output_lines)
 
-# === Config ===
+# === Config (Updated for GitHub) ===
 HF_TOKEN = "YOUR_TOKEN_HERE"
-CB_MODEL_PATH = "./cb_hindi_model/model"
-INPUT_FILE_PATH = "/kaggle/input/datasets/nexus0621/indic-shallow-parser/input"
-OUTPUT_FILE_PATH = "/kaggle/working/output.txt"
+# Assumes you have a folder named 'model' inside your repo
+CB_MODEL_PATH = "./model" 
+# Assumes your input file is in a folder named 'tests'
+INPUT_FILE_PATH = "./tests/input" 
+# Output will be saved in the tests folder
+OUTPUT_FILE_PATH = "./tests/output.txt" 
 
 # === Main Pipeline ===
 def run_pipeline():
+    # Create the output directory if it doesn't exist
+    os.makedirs(os.path.dirname(OUTPUT_FILE_PATH), exist_ok=True)
+
     if not os.path.exists(INPUT_FILE_PATH):
         print(f"Error: {INPUT_FILE_PATH} not found.")
         return
@@ -154,23 +156,19 @@ def run_pipeline():
             clean_text = line.strip()
             if not clean_text: continue
             
-            # Remove tags
-            clean_text = re.sub(r'^\\s*', '', clean_text)
+            # Clean leading space or source markers 
+            clean_text = re.sub(r'^\\s*', '', clean_text).strip()
             
-            # Step 1: Shallow Parsing
             conll_output = shallow_parse(clean_text, "hin", mode="conll")
             
-            # Step 2: Clause Boundary Detection
             text_for_cb = clean_text.replace(" ।", "").replace("।", "").strip()
             cb_output = get_cb_annotation(cb_model, cb_tokenizer, text_for_cb)
             
-            # Step 3: Align and Format
             tokens = [l.split("\t")[1] for l in conll_output if l.strip() and len(l.split("\t")) >= 2]
             cb_boundary_tags = parse_cb_to_boundaries(cb_output, tokens)
             
             final_ssf = ssf_string_to_fs_with_cb(conll_output, cb_boundary_tags, starting_sentno=current_sentno)
             
-            # Step 4: Write to file
             f_out.write(final_ssf + "\n\n")
             print(f"Processed sentence {current_sentno}")
             current_sentno += 1
